@@ -1,0 +1,157 @@
+#############################################################
+#							    #
+# wavsilence: A program to split a WAV file up into smaller #
+#             pieces by detecting silence.                  #
+#            						    #
+# Copyright 2003 Daniel Smith (dsmith@danplanet.com)        #
+#	http://danplanet.com/wav/			    #
+#							    #
+#############################################################
+
+# $Id: README,v 1.1 2003/08/08 14:46:23 dsmith Exp $
+
+/------\
+| GOAL |
+\------/
+
+The goal of the program is to take a large WAV file with gaps of
+silence and create smaller WAV files, containing the data between the
+gaps.  The original use was to split up the chapters of large audio
+book files.
+
+/---------\
+| INSTALL |
+\---------/
+
+Unpack the archive:
+
+  % tar xzf wavsilence-0.X.tar.gz
+
+Get into the directory it created:
+
+  % cd wavsilence-0.X
+
+Make the binaries:
+
+  % make
+
+That's it.  Copy the binaries where you want them.
+
+/-------\
+| USAGE |
+\-------/
+
+The usage information, as displayed by 'wavsilence -h':
+
+| wavsilence v0.40 - Dan Smith (dsmith@danplanet.com)
+| Usage: wavsilence <options>
+| Options:
+|   -g <gap>       Minimum gap (in seconds) to be considered silence
+|   -t <threshold> Volume (in % of Max) to be considered silence
+|   -v             Verbose mode (specify multiple times to increase verbosity)
+|   -I             Print input WAV information
+|   -e <cmd>       Execute <cmd> when each piece is finished, with the filename
+|                  as the last argument
+|   -r             Remove the WAV file after <cmd> (only valid with -e)
+|   -p             Display progress and statistics during operation
+|   -i <file>      Read from <file> instead of stdin
+|   -n <name>      Name output files <name>N
+|   -l <file>      Log summary information in <file>
+|   -b <num>       Buffer input by <num> samples (1 is default; try 16)
+|   -P <cmd>       Pipe output of each segment to <cmd>
+|   -m <seconds>   Minimum track length (in seconds)
+|   -M <minutes>   Minimum track length (in minutes)
+|   -s             Skip silence (remove the silence between pieces)
+|   -c <num>       Counter-start. With this option you can set the initial
+|                  value of the file-number-counter.
+|   -h             Display this message
+| Operation:
+|   WAV file is read via stdin, split at points of silence into files
+|   named "piece-N.wav" (unless user specified)
+ 
+An example invocation is:
+
+  % ./wavsilence -g 2 -t 4 -b 64 -l log.txt -p -i bigfile.wav
+
+This will search for gaps of >=2s where the volume is <=4% of max.  64
+samples will be read at a time (to increase performance).  Progress
+will be displayed during execution and a summary will be left in the
+'log.txt' file when finished.
+
+Minimum track length can be specified in minutes, seconds, or both.
+For example, the following command will not split tracks shorter than
+2 minutes and 31 seconds:
+
+  % ./wavsilence -i input.wav -M 2 -m 31
+
+Normally the splitted tracks start with the silence-gap. If you don't like
+this behaviour, then use the "-s"-option which skips the silence between
+the tracks.
+
+With the option "-c <num>" you can specify the counter-start. With this option
+you can set the initial value of the file-number-counter, which defaults to 0.
+For example if the first piece should start with number 5 then use '-c 5'.
+
+
+/-------------\
+| PERFORMANCE |
+\-------------/
+
+Increasing the sample buffer can *really* increase the throughput of
+the program.  On a dual 933MHz P3 with 256MB RAM and an ATA100 IDE
+disk, a sample buffer of 64 provides optimal performance (~6MB/s).
+I'd like to hear about performance others are getting.
+
+Enabling the progress display (the -p option) may reduce performance
+if you have a fast system.
+
+When piping output to a command (the -P option), the throughput is
+limited to the speed at which the command you're running can take
+data.  If you have the space, it would be faster to let the program
+create the pieces in separate files (the default behavior) and then
+use the "-e" option to exec a program on each file when it's done.
+
+/---------\
+| CHANGES |
+\---------/
+
+Version 0.44 (Stephan Loescher: 06-Jul-2004)
+------------
+- Added option "-c" to specify the initial counter for the pieces.
+
+Version 0.43 (Stephan Loescher: 06-Jun-2004)
+------------
+- Added option "-s" to skip the silence-gap, for the pieces not to start with
+  silence
+
+Version 0.42 (Tom Blough: 30-May-2004)
+------------
+- Added flexible file naming 
+- Minimum track length override
+
+Version 0.41 (David Rosal: 15-April-2004)
+------------
+- Code cleanup
+
+Version 0.4 (Dan Smith: 19-Feb-2004)
+-----------
+- Added ability to mandate a minimum track length
+- Code cleanup
+
+Version 0.3 (Dan Smith: 8-Aug-2003)
+-----------
+- Added ability to pipe data to another program
+- Added ability to exec a command when each piece is finished
+- Added ability to change the names of the piece files
+- Fixed segmentation fault if no log file is used (oops)
+
+Version 0.2 (Dan Smith: 7-Aug-2003)
+-----------
+Initial Release
+
+/---------\
+| CONTACT |
+\---------/
+
+Comments, complaints, suggestions, and all other feedback is welcome.
+Please send email to dsmith-AT-danplanet.com.
