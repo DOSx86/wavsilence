@@ -6,8 +6,10 @@
   Copyright 2003 Daniel Smith (dsmith@danplanet.com)
   
   The most recent revision of this program may be found at:
-      http://danplanet.com/wav/
+      http://danplanet.com/wav/  (404)
 
+   New project location:
+      https://github.com/DOSx86/wavsilence
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -55,12 +57,11 @@
 
 #define PROG_MULT       700
 
-#define VERSION         0.44	/* loescher 07/06/04 */
 #define DEFAULT_NAME	"piece-%03i.wav"
 
 /* GAP is the calculated number of samples for opts.gap seconds */
-#define GAP ((int)(wav_headers->fmt->SampleRate * opts.gap * wav_headers->fmt->NumChannels))
-#define OVERRIDE ((int)(wav_headers->fmt->SampleRate * opts.override * wav_headers->fmt->NumChannels))
+#define GAP ((int)(wav_headers->fmt.SampleRate * opts.gap * wav_headers->fmt.NumChannels))
+#define OVERRIDE ((int)(wav_headers->fmt.SampleRate * opts.override * wav_headers->fmt.NumChannels))
 
 struct ws_opts {
 

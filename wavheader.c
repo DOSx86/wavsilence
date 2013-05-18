@@ -6,8 +6,10 @@
   Copyright 2003 Daniel Smith (dsmith@danplanet.com)
   
   The most recent revision of this program may be found at:
-      http://danplanet.com/wav/
+      http://danplanet.com/wav/  (404)
 
+   New project location:
+      https://github.com/DOSx86/wavsilence
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -28,71 +30,147 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
+#include <assert.h>
+#include <errno.h>
 
 #include "wavheader.h"
 
-unsigned int endian_flip(unsigned int word) {
-
-  char hbyte, lbyte, hhbyte, llbyte;
-  short result;
-
-  llbyte = word & 0xFF000000;
-  lbyte  = word & 0x00FF0000;
-  hbyte  = word & 0x0000FF00;
-  hhbyte = word & 0x000000FF;
-  
-  result = 0;
-
-  result = (hhbyte << 24) & result;
-  result = (hbyte << 8) & result;
-  result = (lbyte >> 8) & result;
-  result = (llbyte >>24) & result;
-
-  printf("BEFORE: %x  AFTER: %x\n", word, result);
-
+static void skip_chunk_error(const char *which, unsigned int target_id) {
+   fprintf(stderr,
+           "%s while searching for chunk ID 0x%08X\n",
+           which,
+           target_id);
 }
 
-struct riff_header* process_riff_header(void* chunk) {
+// Attempts to read the next chunk, verifying that the ID matches and that
+// the data in the chunk can be read completely.
+//
+// If the ID does not match, header is NULL, or if data_size is greater than the
+// number of bytes in the chunk, this function will fail and return 0.
+//
+// chunk_data is optional. If chunk_data is NULL or data_size is 0, then only
+// the header is read.
+//
+// If skip_data is 0 and chunk data is being read (chunk_data and data_size are
+// both non-zero), then the read position does not skip the rest of the chunk
+// data, if any is remaining. Note: If the data is not skipped, then the padding
+// byte at the the end of the chunk data must be taken into account.
+//
+// If skip_data is 1 and chunk data is being read, then data_size bytes are read
+// into chunk_data, then the read position skips to the beginning of the next
+// chunk header.
+//
+// Returns a non-zero value on success
+static int read_chunk(int fd, unsigned int id, struct chunk_header *header, void *chunk_data, size_t data_size, int skip_data) {
+   if (!header) {
+      fprintf(stderr, "read_chunk: NULL header for chunk ID 0x%08X\n", id);
+      return 0;
+   }
 
-  struct riff_header* h;
-  h = malloc(sizeof(struct riff_header));
+   if (!chunk_data || !data_size) {
+      chunk_data  = NULL;
+      data_size   = 0;
+   }
 
-  memcpy(h, chunk, sizeof(struct riff_header));
+   if (read(fd, header, sizeof(*header)) != sizeof(*header)) {
+      fprintf(stderr,
+              "Error reading the header for chunk ID 0x%08X. Error = %d. "
+                 "Offset = %d.\n",
+              id,
+              errno,
+              lseek(fd, 0, SEEK_CUR));
+      return 0;
+   }
 
-  if(h->ChunkID == RIFF_CHUNK_ID)
-    return h;
-  else
-    return NULL;
+   if (header->id != id) {
+      fprintf(stderr,
+              "Expected chunk ID = 0x%08x. Read chunk ID = 0x%08X. Offset = "
+                 "%d.\n",
+              id,
+              header->id,
+              lseek(fd, 0, SEEK_CUR));
+      return 0;
+   }
 
+   // Copy data in the chunk into chunk_data
+   if (chunk_data) {
+      assert(data_size > 0);
+
+      if (data_size > header->size) {
+         fprintf(stderr,
+                 "Tried to read more data than the chunk contains for ID "
+                    "0x%08X. Chunk data size = %d bytes, read size = %d "
+                    "bytes. Offset = %d.\n",
+                 id,
+                 header->size,
+                 data_size,
+                 lseek(fd, 0, SEEK_CUR));
+         return 0;         
+      }
+
+      if (read(fd, chunk_data, data_size) != data_size) {
+         fprintf(stderr,
+                 "Error while reading chunk data for chunk ID 0x%08X. "
+                    "Error = %d. Offset = %d.\n",
+                 id,
+                 errno,
+                 lseek(fd, 0, SEEK_CUR));
+         return 0;
+      }
+
+      // data_size now contains the number of bytes of chunk data to skip
+      data_size = header->size - data_size;
+   } else
+     data_size = header->size;
+
+   if (skip_data) {
+      // Add a padding byte if necessary
+      data_size += header->size % 2;
+
+      // Skip the rest of the chunk's data
+      if (lseek(fd, data_size, SEEK_CUR)==-1) {
+         fprintf(stderr,
+                 "Error while seeking to the end of chunk ID 0x%08X. Error = "
+                    "%d.\n",
+                 id,
+                 errno);
+         return 0;
+      }
+   }
+
+   return 1;
 }
 
-struct fmt_header* process_fmt_header(void* chunk) {
+// Skips every chunk in the file until it finds one with an ID matching
+// target_id. On success, the matching chunk header is copied into header and a
+// non-zero value is returned.
+static int skip_chunks(int fd, unsigned int target_id, struct chunk_header *header) {
+   if (!header) {
+      fprintf(stderr,
+              "skip_chunks: NULL header while looking for chunk ID 0x%08X\n",
+              target_id);
+      return 0;
+   }
 
-  struct fmt_header* h;
-  h = malloc(sizeof(struct fmt_header));
+   do {
+      if (read(fd, header, sizeof(*header)) != sizeof(*header)) {
+         skip_chunk_error("Read error", target_id);
+         return 0;
+      }
 
-  memcpy(h, chunk, sizeof(struct fmt_header));
+      if (header->id != target_id) {
+         // Skip to the next chunk
+         if (lseek(fd, header->size + (header->size % 2), SEEK_CUR)==-1) {
+            skip_chunk_error("Unexpected EOF", target_id);
+            return 0;
+         }
+      }
+   } while (header->id != target_id);
 
-  if(h->Subchunk1ID == FMT_CHUNK_ID)
-    return h;
-  else
-    return NULL;
-
-}
-
-struct data_header* process_data_header(void* chunk) {
-
-  struct data_header* h;
-  h = malloc(sizeof(struct data_header));
-
-  memcpy(h, chunk, sizeof(struct data_header));
-
-  if(h->Subchunk2ID == DATA_CHUNK_ID)
-    return h;
-  else
-    return NULL;
-
+   return 1;
 }
 
 void print_riff_info(struct riff_header* h) {
@@ -100,15 +178,15 @@ void print_riff_info(struct riff_header* h) {
   char id_string[5];
   char fmt_string[5];
 
-  memcpy(id_string, &h->ChunkID, 4);
+  memcpy(id_string, &h->header.id, 4);
   id_string[4] = '\0';
 
   memcpy(fmt_string, &h->Format, 4);
   fmt_string[4] = '\0';
 
   printf("-- Riff Header --\n");
-  printf("  Chunk ID: 0x%x (%s)\n", h->ChunkID, id_string);
-  printf("  Size: %.2f KB\n", h->ChunkSize / 1024.0);
+  printf("  Chunk ID: 0x%x (%s)\n", h->header.id, id_string);
+  printf("  Size: %.2f KiB\n", h->header.size / 1024.0);
   printf("  Format: 0x%x (%s)\n", h->Format, fmt_string);
 
 }
@@ -117,12 +195,12 @@ void print_format_info(struct fmt_header* h) {
 
   char id_string[5];
 
-  memcpy(id_string, &h->Subchunk1ID, 4);
+  memcpy(id_string, &h->header.id, 4);
   id_string[4] = '\0';
 
   printf("-- Format Header --\n");
-  printf("  Chunk ID: 0x%x (%s)\n", h->Subchunk1ID, id_string);
-  printf("  Size: %i bytes\n", h->Subchunk1Size);
+  printf("  Chunk ID: 0x%x (%s)\n", h->header.id, id_string);
+  printf("  Size: %i bytes\n", h->header.size);
   printf("  Audio Format: %i (1=PCM)\n", h->AudioFormat);
   printf("  Num Channels: %i (2=Stereo)\n", h->NumChannels);
   printf("  Sampling Rate: %i Hz\n", h->SampleRate);
@@ -132,68 +210,99 @@ void print_format_info(struct fmt_header* h) {
 
 }
 
-void print_data_info(struct data_header* h) {
+void print_data_info(struct chunk_header* h) {
 
   char id_string[5];
-  memcpy(id_string, &h->Subchunk2ID, 4);
+  memcpy(id_string, &h->id, 4);
   id_string[4] = '\0';
 
   printf("-- Data Header --\n");
-  printf("  Chunk ID: 0x%x (%s)\n", h->Subchunk2ID, id_string);
-  printf("  Size: %.2f KB\n", h->Subchunk2Size / 1024.0);
+  printf("  Chunk ID: 0x%x (%s)\n", h->id, id_string);
+  printf("  Size: %.2f KiB\n", h->size / 1024.0);
 
 }
 
+int process_headers(int fd, struct wav_file_headers *h) {
 
-struct wav_file_headers* process_headers(int fd) {
+  if (!h) {
+     fprintf(stderr, "process_headers: wav_file_header is NULL\n");
+     return 0;
+  }
 
-  struct wav_file_headers* h;
-  void *riff_h, *fmt_h, *data_h;
-  
-  riff_h = malloc(sizeof(struct riff_header));
-  fmt_h  = malloc(sizeof(struct fmt_header));
-  data_h = malloc(sizeof(struct data_header));
-  h = malloc(sizeof(struct wav_file_headers));
-  
-  read(fd, riff_h, sizeof(struct riff_header));
-  read(fd, fmt_h,  sizeof(struct fmt_header));
-  read(fd, data_h, sizeof(struct data_header));
+  if (!read_chunk(fd, RIFF_CHUNK_ID, &h->riff.header, (unsigned char *)&h->riff + sizeof(h->riff.header), sizeof(h->riff) - sizeof(h->riff.header), 0))
+     return 0;
 
-  h->riff = process_riff_header(riff_h);
-  h->fmt  = process_fmt_header(fmt_h);
-  h->data = process_data_header(data_h);
+  if (!read_chunk(fd, FMT_CHUNK_ID, &h->fmt.header, (unsigned char *)&h->fmt + sizeof(h->fmt.header), sizeof(h->fmt) - sizeof(h->fmt.header), 1))
+     return 0;
 
-  free(riff_h);
-  free(fmt_h);
-  free(data_h);
+  // Skip optional chunks
+  if (!skip_chunks(fd, DATA_CHUNK_ID, &h->data))
+     return 0;
 
-  return h;
-
+  return 1;
 }
 
-void write_headers(int fd, struct wav_file_headers* h) {
+int write_headers(int fd, struct wav_file_headers* h) {
+
+   off_t offset = lseek(fd, 0, SEEK_CUR);
+
+   if (offset==-1) {
+      fprintf(stderr,
+              "write_headers: Could not get the file offset. Error = %d.\n",
+              errno);
+      return 0;
+   }
+
+   if (!h) {
+      fprintf(stderr, "write_headers: wav_file_headers is NULL\n");
+      return 0;
+   }
 
   // RIFF Header
-  write(fd, h->riff, sizeof(struct riff_header));
-  
-  // FMT Header
-  write(fd, h->fmt, sizeof(struct fmt_header));
-  
-  // DATA Header
-  write(fd, h->data, sizeof(struct data_header));
+  if (write(fd, &h->riff, sizeof(h->riff)) != sizeof(h->riff)) {
+     fprintf(stderr,
+             "write_headers: Error while writing RIFF header. Start offset = "
+                "%d. Error = %d.\n",
+             offset,
+             errno);
+     return 0;
+   }
 
+  offset += sizeof(h->riff);
+
+  // FMT Header
+  if (write(fd, &h->fmt, sizeof(h->fmt)) != sizeof(h->fmt)) {
+     fprintf(stderr,
+             "write_headers: Error while writing format header. Start offset = "
+                "%d. Error = %d.\n",
+             offset,
+             errno);
+     return 0;
+  }
+
+  offset += sizeof(h->fmt);
+
+  // DATA Header
+  if (write(fd, &h->data, sizeof(h->data)) != sizeof(h->data)) {
+     fprintf(stderr,
+             "write_headers: Error while writing data header. Start offset = "
+               "%d. Error = %d.\n",
+             offset,
+             errno);
+     return 0;
+  }
+
+  return 1;
 }
 
-void fp_write_headers(FILE* fp, struct wav_file_headers* h) {
+int fp_write_headers(FILE* fp, struct wav_file_headers* h) {
 
-  // RIFF Header
-  fwrite(h->riff, sizeof(struct riff_header), 1, fp);
-  
-  // FMT Header
-  fwrite(h->fmt, sizeof(struct fmt_header), 1, fp);
-  
-  // DATA Header
-  fwrite(h->data, sizeof(struct data_header), 1, fp);
+   int fd = fileno(fp);
 
+   if (fd==-1) {
+      fprintf(stderr, "fp_write_headers: Could not get file descriptor\n");
+      return 0;
+   }
 
+   return write_headers(fd, h);
 }

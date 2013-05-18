@@ -6,8 +6,10 @@
   Copyright 2003 Daniel Smith (dsmith@danplanet.com)
   
   The most recent revision of this program may be found at:
-      http://danplanet.com/wav/
+      http://danplanet.com/wav/  (404)
 
+   New project location:
+      https://github.com/DOSx86/wavsilence
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -29,23 +31,32 @@
 #ifndef WAV_HEADER_H
 #define WAV_HEADER_H
 
+#define WAVSILENCE_VERSION "wavsilence 0.45 " __DATE__ " " __TIME__
 
-#define RIFF_CHUNK_ID 0x46464952
-#define FMT_CHUNK_ID  0x20746d66
-#define DATA_CHUNK_ID 0x61746164
+#define RIFF_CHUNK_ID 0x46464952 // "RIFF"
+#define FMT_CHUNK_ID  0x20746d66 // "fmt "
+#define DATA_CHUNK_ID 0x61746164 // "DATA"
+
+#pragma pack(push, 1)
+
+struct chunk_header {
+   unsigned int id;
+
+   // Size of the chunk's content in bytes, excluding the potential padding byte
+   unsigned int size;
+};
 
 struct riff_header {
 
-  unsigned int ChunkID;
-  unsigned int ChunkSize;
+   struct chunk_header header;
   unsigned int Format;
 
 };
 
 struct fmt_header {
 
-  unsigned int Subchunk1ID;
-  unsigned int Subchunk1Size;
+   struct chunk_header header;
+
   short    int AudioFormat;
   short    int NumChannels;
   unsigned int SampleRate;
@@ -55,32 +66,25 @@ struct fmt_header {
 
 };
 
-struct data_header {
-
-  unsigned int Subchunk2ID;
-  unsigned int Subchunk2Size;
-
-};
+#pragma pack(pop)
 
 struct wav_file_headers {
 
-  struct riff_header* riff;
-  struct fmt_header*  fmt;
-  struct data_header* data;
+  struct riff_header  riff;
+  struct fmt_header   fmt;
+  struct chunk_header data;
 
 };
 
 // Functions
 
-struct riff_header* process_riff_header(void* chunk);
-struct fmt_header* process_fmt_header(void* chunk);
-struct data_header* process_data_header(void* chunk);
 void print_riff_info(struct riff_header* h);
 void print_format_info(struct fmt_header* h);
-void print_data_info(struct data_header* h);
-struct wav_file_headers* process_headers(int fd);
-void write_headers(int fd, struct wav_file_headers* h);
+void print_data_info(struct chunk_header* h);
 
-unsigned int endian_flip(unsigned int word);
+int process_headers(int fd, struct wav_file_headers *h);
+
+int write_headers(int fd, struct wav_file_headers* h);
+int fp_write_headers(FILE* fp, struct wav_file_headers* h);
 
 #endif

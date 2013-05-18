@@ -7,8 +7,10 @@
   Copyright 2003 Daniel Smith (dsmith@danplanet.com)
   
   The most recent revision of this program may be found at:
-      http://danplanet.com/wav/
+      http://danplanet.com/wav/  (404)
 
+   New project location:
+      https://github.com/DOSx86/wavsilence
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -31,8 +33,10 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "wavheader.h"
 
@@ -58,7 +62,7 @@ int measure_size(struct wav_file_headers* h) {
     total += count;
     if(!quiet)
       printf("Processing file: %.0f%% (%i KB)\r", 
-	     (total / (double)h->data->Subchunk2Size) * 100,
+	     (total / (double)h->data.size) * 100,
 	     total / 1024);
   } while(count == BLOCK_SIZE);
 
@@ -73,10 +77,10 @@ double calc_length(struct wav_file_headers* h) {
   int data_size;
   int num_samples;
 
-  data_size = h->data->Subchunk2Size;
-  num_samples = data_size / ((h->fmt->NumChannels) * (h->fmt->BitsPerSample / 8));
+  data_size = h->data.size;
+  num_samples = data_size / ((h->fmt.NumChannels) * (h->fmt.BitsPerSample / 8));
  
-  return (double)num_samples / h->fmt->SampleRate;
+  return (double)num_samples / h->fmt.SampleRate;
   
 
 }
@@ -114,7 +118,7 @@ void process_args(int argc, char**argv) {
       info = 1;
       break;
     case 'V':
-      printf("RCS Tag: $Id: wavinfo.c,v 1.2 2003/08/08 20:24:42 dsmith Exp dsmith $\n");
+      printf(WAVSILENCE_VERSION "\n");
       exit(0);
     case 'q':
       quiet = 1;
@@ -131,42 +135,55 @@ void process_args(int argc, char**argv) {
 
 int main(int argc, char**argv) {
 
-  //  int fd;
-  struct wav_file_headers* h;
+  struct wav_file_headers h;
   int c;
   int size;
 
   length = info = verify = quiet = 0;
 
+  if (argc < 2) {
+     print_usage();
+     return 1;
+  }
+
   process_args(argc, argv);
 
   fd = open(argv[argc-1], O_RDONLY);
 
-  h = process_headers(fd);
-  
+  if (fd==-1) {
+     fprintf(stderr, "Could not open the file \"%s\"\n", argv[argc - 1]);
+     return 1;
+  }
+
+  if (!process_headers(fd, &h)) {
+     close(fd);
+     return 1;
+  }
+
   if(info) {
-    print_riff_info(h->riff);
-    print_format_info(h->fmt);
-    print_data_info(h->data);
-    printf("\nTotal Length: %.2f seconds\n", calc_length(h));
+    print_riff_info(&h.riff);
+    print_format_info(&h.fmt);
+    print_data_info(&h.data);
+    printf("\nTotal Length: %.2f seconds\n", calc_length(&h));
   }
   if(length) {
-    printf("%.2f\n", calc_length(h));
+    printf("%.2f\n", calc_length(&h));
   }
 
   if(verify) {
-    size = measure_size(h);
-    if(size < h->data->Subchunk2Size)
-      printf("File is truncated (%i / %i bytes)\n", size, h->data->Subchunk2Size);
-    else if (size > h->data->Subchunk2Size)
-      printf("File is too long (%i / %i bytes)\n", size, h->data->Subchunk2Size);
+    size = measure_size(&h);
+    if(size < h.data.size)
+      printf("File is truncated (%i / %i bytes)\n", size, h.data.size);
+    else if (size > h.data.size)
+      printf("File is too long (%i / %i bytes)\n", size, h.data.size);
     else
       printf("File is OK (%i bytes)\n", size);
   }
 
   if((length == 0) && (info == 0) && (verify == 0)) {
     print_usage();
-    exit(0);
+    return 1;
   }
 
+  return 0;
 }

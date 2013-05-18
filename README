@@ -1,11 +1,14 @@
 #############################################################
-#							    #
+#                                                           #
 # wavsilence: A program to split a WAV file up into smaller #
 #             pieces by detecting silence.                  #
-#            						    #
-# Copyright 2003 Daniel Smith (dsmith@danplanet.com)        #
-#	http://danplanet.com/wav/			    #
-#							    #
+#                                                           #
+# Copyright 2003-2013 Daniel Smith (dsmith@danplanet.com)   #
+# and contributors                                          #
+#                                                           #
+#  Old: http://danplanet.com/wav/                           #
+#  New: https://github.com/DOSx86/wavsilence                #
+#                                                           #
 #############################################################
 
 # $Id: README,v 1.1 2003/08/08 14:46:23 dsmith Exp $
@@ -43,7 +46,6 @@ That's it.  Copy the binaries where you want them.
 
 The usage information, as displayed by 'wavsilence -h':
 
-| wavsilence v0.40 - Dan Smith (dsmith@danplanet.com)
 | Usage: wavsilence <options>
 | Options:
 |   -g <gap>       Minimum gap (in seconds) to be considered silence
@@ -115,6 +117,19 @@ use the "-e" option to exec a program on each file when it's done.
 | CHANGES |
 \---------/
 
+Version 0.45 (Nick Kochakian: 18-May-2013)
+------------
+- Added error checking to the header reading functions
+- Removed unnecessary memory allocations and fixed memory leaks in wavheader.c
+- Separated the chunk headers from the rest of the header data
+  NOTE: The format header currently does not respect the layout defined in the
+        original spec
+- Skip chunks that might appear before the DATA chunk. The previous version did
+  not do this, which could cause it to crash.
+- wavsilence might not work with all compilers, because some might not pack the
+  structures correctly because of no #pragma pack support. Compilers that
+  support this directive include GCC and MSVC.
+
 Version 0.44 (Stephan Loescher: 06-Jul-2004)
 ------------
 - Added option "-c" to specify the initial counter for the pieces.
@@ -153,5 +168,5 @@ Initial Release
 | CONTACT |
 \---------/
 
-Comments, complaints, suggestions, and all other feedback is welcome.
-Please send email to dsmith-AT-danplanet.com.
+This project can be found at:
+https://github.com/DOSx86/wavsilence

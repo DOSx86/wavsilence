@@ -6,8 +6,10 @@
   Copyright 2003 Daniel Smith (dsmith@danplanet.com)
   
   The most recent revision of this program may be found at:
-      http://danplanet.com/wav/
+      http://danplanet.com/wav/  (404)
 
+   New project location:
+      https://github.com/DOSx86/wavsilence
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -44,6 +46,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <string.h>   /* strncpy() */
+#include <unistd.h>
 #include "wavheader.h"
 #include "wavsilence.h"
 
@@ -110,7 +113,7 @@ void start_log_file(struct wav_file_headers* wav_headers) {
   fgets(date, DATE_LENGTH, datefp);
   pclose(datefp);
 
-  fprintf(logfp, "# Log file created by wavsilence v%.2f\n", VERSION);
+  fprintf(logfp, "# Log file created by " WAVSILENCE_VERSION "\n");
   fprintf(logfp, "# Copyright Dan Smith (2003) - http://www.danplanet.com\n");
   fprintf(logfp, "# Summary generated %s\n", date);
 
@@ -121,9 +124,9 @@ void start_log_file(struct wav_file_headers* wav_headers) {
     fprintf(logfp, "stdin\n");
 
   fprintf(logfp, "# %i Channels, %i Bit, %i Hz\n\n", 
-	  wav_headers->fmt->NumChannels, 
-	  wav_headers->fmt->BitsPerSample,
-	  wav_headers->fmt->SampleRate);
+	  wav_headers->fmt.NumChannels, 
+	  wav_headers->fmt.BitsPerSample,
+	  wav_headers->fmt.SampleRate);
 
   fflush(logfp);
 
@@ -162,7 +165,7 @@ int is_silence(short sample) {
 
 double calc_real_time(int sample_num, struct wav_file_headers* h) {
 
-  return (double)sample_num / h->fmt->SampleRate;
+  return (double)sample_num / h->fmt.SampleRate;
 
 }
 
@@ -199,7 +202,7 @@ void fix_file(int length) {
 void write_log_entry(unsigned int bytecounter, unsigned int sample_c, 
 		     struct wav_file_headers* wav_headers) {
   char fname[FILEN_LENGTH];
-  build_output_filename(counter-1, fname);
+  build_output_filename(counter-1, fname); // Potential buffer overflow
 
 
   fprintf(logfp, "%20s: %9i bytes  %9.2f seconds\n",
@@ -226,7 +229,7 @@ void start_new_file(struct wav_file_headers* wav_headers,
 
   }
 
-  build_output_filename(counter++, fname);
+  build_output_filename(counter++, fname); // Potential buffer overflow
 
   if(debug_level >= VERBOSE) {
     if(opts.show_progress) clear_line();
@@ -301,9 +304,9 @@ void process_data(struct wav_file_headers* wav_headers, int in_fd) {
   start_time = time(NULL);
 
   // Array of samples (NumChannels of them)
-  sample = calloc(wav_headers->fmt->NumChannels * opts.buffer_amt, sizeof(short));
+  sample = calloc(wav_headers->fmt.NumChannels * opts.buffer_amt, sizeof(short));
 
-  sample_size = wav_headers->fmt->BitsPerSample / 8;
+  sample_size = wav_headers->fmt.BitsPerSample / 8;
 
   if(debug_level >= VERYVERBOSE)
     printf("sample size: %i\n", sample_size);
@@ -311,10 +314,8 @@ void process_data(struct wav_file_headers* wav_headers, int in_fd) {
   sample_c = 0;
   do {
 
-    size = read(in_fd, sample, sample_size * wav_headers->fmt->NumChannels * opts.buffer_amt);
-    for(i=0; i<wav_headers->fmt->NumChannels * opts.buffer_amt; i++) {
-      //      sample[i] = 0;
-      //      size = read(in_fd, &sample[i], sample_size);
+    size = read(in_fd, sample, sample_size * wav_headers->fmt.NumChannels * opts.buffer_amt);
+    for(i=0; i<wav_headers->fmt.NumChannels * opts.buffer_amt; i++) {
 
       if((size == 0) && (debug_level >= VERYVERBOSE))
 	printf("End of Data\n");
@@ -322,7 +323,6 @@ void process_data(struct wav_file_headers* wav_headers, int in_fd) {
       if(debug_level >= INSANELYVERBOSE)
 	printf("[%i,%i] 0x%hx (%hi)  %i\n", sample_c, i, sample[i], sample[i], size);
 
-      //      if((sample[i] < 1000) && (sample[i] > -1000))
       if(is_silence(sample[i]))
 	silence_counter++;
       else {
@@ -335,17 +335,17 @@ void process_data(struct wav_file_headers* wav_headers, int in_fd) {
 
     if(debug_level >= VERYVERBOSE) {
       printf("min_track_length: %f cur_track_length: %f\n", opts.min_track_length, 
-	     file_sample_c / (float)wav_headers->fmt->SampleRate);
+	     file_sample_c / (float)wav_headers->fmt.SampleRate);
     }
 
     if(opts.min_track_length > 0) {
       /* Check to make sure we've seen enough samples before splitting */
-      if( opts.min_track_length <= (file_sample_c / wav_headers->fmt->SampleRate) )
+      if( opts.min_track_length <= (file_sample_c / wav_headers->fmt.SampleRate) )
 	min_length_flag = 1;
       else
 	min_length_flag = 0;
     }
-    
+
     // tblough 5/23/04 - modified to provide minimum track length override
 	if((opts.override > opts.gap) && (silence_counter > OVERRIDE)) {
 	   if(debug_level >= VERYVERBOSE) {
@@ -371,14 +371,14 @@ void process_data(struct wav_file_headers* wav_headers, int in_fd) {
       file_bytecounter = 0;
       file_sample_c = 0;
     }
-      
+
 	// Only write if we should not skip the silence and there is silence
 	// loescher 06/06/04
 	if (! (opts.skip_silence && silence_flag) ) {
-	  wsize = fwrite(sample, sample_size * wav_headers->fmt->NumChannels * opts.buffer_amt, 1, fd);
-	  
-	  file_bytecounter += wsize * sample_size * wav_headers->fmt->NumChannels * opts.buffer_amt;
-	  bytecounter += wsize * sample_size * wav_headers->fmt->NumChannels * opts.buffer_amt;
+	  wsize = fwrite(sample, sample_size * wav_headers->fmt.NumChannels * opts.buffer_amt, 1, fd);
+
+	  file_bytecounter += wsize * sample_size * wav_headers->fmt.NumChannels * opts.buffer_amt;
+	  bytecounter += wsize * sample_size * wav_headers->fmt.NumChannels * opts.buffer_amt;
 	}
 
     sample_c += opts.buffer_amt;
@@ -391,9 +391,6 @@ void process_data(struct wav_file_headers* wav_headers, int in_fd) {
   } while(size > 0);
 
   // Fix final file and close FD
-  //  file_bytecounter += opts.buffer_amt * wav_headers->fmt->NumChannels * sample_size;
-  //  file_sample_c += opts.buffer_amt;
-
   if(! opts.pipe_enabled) // Don't seek if we're piping
     fix_file(file_bytecounter);
 
@@ -412,7 +409,7 @@ void process_data(struct wav_file_headers* wav_headers, int in_fd) {
 
 void print_usage() {
 
-  printf("wavsilence v%.2f - Dan Smith (dsmith@danplanet.com)\n", VERSION);
+  printf(WAVSILENCE_VERSION " - Dan Smith (dsmith@danplanet.com)\n");
   printf("Usage: wavsilence <options>\n");
   printf("Options:\n");
   printf("  -g <gap>       Minimum gap (in seconds) to be considered silence\n");
@@ -444,8 +441,8 @@ void print_usage() {
   printf("  The initial value of N defaults to 0 but can be specified by -c.\n");
   printf("Examples:\n");
   printf("  wavsilence -g 1.1 -o 3.5 -t 4 -b 64 -l log.txt -p -M 3 -i test.wav\n");
-  printf("  wavsilence -v -s -b 64 -n '%2' -c 26 -i recording_of_song_26_to_31.wav\n");
-  
+  printf("  wavsilence -v -s -b 64 -n '%%2' -c 26 -i recording_of_song_26_to_31.wav\n");
+
   exit(1);
 }
 
@@ -514,7 +511,7 @@ void process_args(int argc, char**argv) {
       strncpy(opts.log_file, optarg, FILEN_LENGTH);
       break;
     case 'V':
-      printf("RCS Tag: $Id: wavsilence.c,v 1.7 2003/08/08 14:47:01 dsmith Exp $ \n");
+      printf(WAVSILENCE_VERSION "\n");
       exit(1);
       break;
     case 'i':
@@ -527,7 +524,7 @@ void process_args(int argc, char**argv) {
 	printf("Invalid Buffer amount!\n");
 	exit(1);
       }
-	
+
       break;
     case 'P':
       opts.pipe_enabled = 1;
@@ -601,7 +598,7 @@ int open_input_file() {
 
 int main(int argc, char**argv) {
   
-  struct wav_file_headers* wav_headers;
+  struct wav_file_headers wav_headers;
   int input_fd;
 
   // Initialization
@@ -626,7 +623,7 @@ int main(int argc, char**argv) {
   opts.natural = 0;
   opts.skip_silence = 0; // loescher 06/06/04
   opts.counter_start = 0; // loescher 07/06/04
-  
+
   process_args(argc, argv);
 
   // loescher 07/06/04
@@ -640,17 +637,18 @@ int main(int argc, char**argv) {
   else
     input_fd = 0; // STDIN
 
-  wav_headers = process_headers(input_fd);
+   if (!process_headers(input_fd, &wav_headers))
+      return 1;
 
   if(opts.log_enabled)
-    start_log_file(wav_headers);
+    start_log_file(&wav_headers);
 
   if(opts.show_file_info)
-    print_format_info(wav_headers->fmt);
+    print_format_info(&wav_headers.fmt);
 
-  start_new_file(wav_headers, 0, 0);
+  start_new_file(&wav_headers, 0, 0);
 
-  process_data(wav_headers, input_fd);
-  
-  exit(0);
-};
+  process_data(&wav_headers, input_fd);
+
+  return 0;
+}

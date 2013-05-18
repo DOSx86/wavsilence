@@ -1,16 +1,19 @@
 # Makefile for wavsilence
 # 2003 - Dan Smith (dsmith@danplanet.com)
 
+CC=gcc
+CFLAGS=-Wall -Werror-implicit-function-declaration
+
 all: wavinfo wavsilence
 
 wavheader.o: wavheader.c wavheader.h
-	gcc -c -o wavheader.o wavheader.c
+	$(CC) $(CFLAGS) -c -o wavheader.o wavheader.c
 
 wavinfo: wavheader.o wavinfo.c
-	gcc -o wavinfo wavinfo.c wavheader.o
+	$(CC) $(CFLAGS) -o wavinfo wavinfo.c wavheader.o
 
 wavsilence: wavsilence.c wavheader.o wavsilence.h
-	gcc wavsilence.c wavheader.o -o wavsilence -g
+	$(CC) $(CFLAGS) wavsilence.c wavheader.o -o wavsilence
 
-clean: 
+clean:
 	rm -f *.o *~ wavinfo wavsilence
